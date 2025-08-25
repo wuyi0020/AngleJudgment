@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8" />
+<title>角度練習與猜測</title>
+<style>
+  body { font-family: system-ui, sans-serif; margin: 0; }
+  #container { max-width: 800px; margin: 0 auto; padding: 16px; text-align: center; }
+  canvas { border: 1px solid #000; display: block; margin: 10px auto; max-width: 100%; height: auto; }
+  .row { display: flex; justify-content: center; gap: 8px; align-items: center; flex-wrap: wrap; }
+  #guess { width: 200px; height: 56px; font-size: 28px; text-align: center; }
+  #submit { height: 56px; font-size: 18px; padding: 0 16px; }
+  #modeBtns { margin-top: 10px; }
+  #modeBtns button { font-size: 16px; padding: 8px 14px; border: 1px solid #888; background:#fff; cursor:pointer; }
+  #modeBtns button.active { background:#eee; }
+  #result, #stats { margin-top: 10px; }
+</style>
+</head>
+<body>
+<div id="container">
+  <h1>角度練習與猜測</h1>
+
+  <canvas id="cv" width="800" height="800"></canvas>
+
+  <div class="row">
+    <input id="guess" type="number" inputmode="numeric" placeholder="輸入角度" />
+    <button id="submit">送出</button>
+  </div>
+
+  <div id="modeBtns" class="row">
+    <button data-mode="1" class="active">模式1：猜角度（向上為0°）</button>
+    <button data-mode="2">模式2：猜銳角（相對水平）</button>
+    <button data-mode="3">模式3：輸入角度→出題</button>
+    <button data-mode="4">模式4：輸入銳角→出題</button>
+  </div>
+
+  <div id="result"></div>
+  <div id="stats"></div>
+</div>
+
+<script>
+const cv = document.getElementById('cv');
+const ctx = cv.getContext('2d');
+const input = document.getElementById('guess');
+const submitBtn = document.getElementById('submit');
+const resultDiv = document.getElementById('result');
+const statsDiv = document.getElementById('stats');
+const modeBtns = [...document.querySelectorAll('#modeBtns button')];
+
+let mode = 1; // 1:猜角度 2:猜銳角 3:輸入角度出題 4:輸入銳角出題
+let currentAngle = null; // 以「向上=0°」為基準
+// 統計（僅模式1/2累計）
+let total=0, sumErr=0, minErr=null, maxErr=null, maxErrAngleText='';
+
+// 工具
+const DEG2RAD = Math.PI/180;
+const norm360 = a => ((a % 360) + 360) % 360;
+const circDist = (a,b) => { let d = Math.abs(norm360(a)-norm360(b)); if (d>180) d = 360-d; return d; };
+
+// 繪圖
+function clear() { ctx.clearRect(0,0,cv.width,cv.height); }
+function drawCircle() {
+  const cx=cv.width/2, cy=cv.height/2, r=300;
+  ctx.beginPath(); ctx.arc(cx,cy,r,0,2*Math.PI); ctx.stroke();
+}
+function drawHorizontalLine() {
+  const cx=cv.width/2, cy=cv.height/2, len=320;
+  ctx.beginPath(); ctx.moveTo(cx-len,cy); ctx.lineTo(cx+len,cy); ctx.stroke();
+}
+// angleUp：向上為0°，順時針增加
+function drawRayFromCenter(angleUp, len=300) {
+  const cx=cv.width/2, cy=cv.height/2;
+  const rad = (angleUp - 90) * DEG2RAD;
+  const x = cx + len * Math.cos(rad);
+  const y = cy + len * Math.sin(rad);
+  ctx.beginPath(); ctx.moveTo(cx,cy); ctx.lineTo(x,y); ctx.stroke();
+}
+
+// 題目
+function newQuestion() {
+  if (mode===1 || mode===2) {
+    currentAngle = Math.floor(Math.random()*360); // 0..359
+  } else {
+    currentAngle = null; // 練習模式等使用者輸入
+  }
+  render();
+  input.value = '';
+  input.focus();
+}
+function render() {
+  clear();
+  if (mode===1) {
+    drawCircle();
+    if (currentAngle!==null) drawRayFromCenter(currentAngle);
+  } else if (mode===2) {
+    drawHorizontalLine();
+    drawCircle();
+    if (currentAngle!==null) drawRayFromCenter(currentAngle);
+  } else if (mode===3) {
+    drawCircle(); // 等使用者輸入角度後畫線
+  } else if (mode===4) {
+    drawHorizontalLine();
+    drawCircle(); // 等使用者輸入銳角後畫線
+  }
+}
+
+// 計算正解與誤差
+function correctText() {
+  if (mode===1) return `${norm360(currentAngle)}°`;
+  if (mode===2) {
+    // 以「水平」為基準的銳角：取與90°與270°的最近圓距
+    const acute = Math.min(circDist(currentAngle,90), circDist(currentAngle,270)); // 0..90
+    return `${acute.toFixed(1)}°`;
+  }
+  return '';
+}
+function errorValue(guess) {
+  if (mode===1) {
+    const g = norm360(guess);
+    let d = circDist(currentAngle, g);
+    return d;
+  } else if (mode===2) {
+    const acute = Math.min(circDist(currentAngle,90), circDist(currentAngle,270)); // 正解
+    return Math.abs(acute - guess);
+  }
+  return 0;
+}
+function updateStats(err) {
+  total++; sumErr += err;
+  minErr = (minErr===null)? err : Math.min(minErr, err);
+  if (maxErr===null || err>maxErr) {
+    maxErr = err;
+    maxErrAngleText = correctText(); // 記錄當時的正解文字
+  }
+  const avg = sumErr/total;
+  statsDiv.textContent =
+    `答題數: ${total}，最小誤差: ${minErr.toFixed(1)}°，平均誤差: ${avg.toFixed(1)}°，最大誤差: ${maxErr.toFixed(1)}° (角度: ${maxErrAngleText})`;
+}
+
+// 送出
+function submit() {
+  const val = parseFloat(input.value);
+  if (Number.isNaN(val)) { input.focus(); return; }
+
+  if (mode===1) {
+    // 猜角度 允許0..360（360=0）
+    const guess = norm360(val);
+    const err = errorValue(guess);
+    resultDiv.textContent = `正確角度：${correctText()}，誤差：${err.toFixed(1)}°`;
+    updateStats(err);
+    newQuestion();
+  } else if (mode===2) {
+    // 猜銳角 建議0..90
+    const guess = Math.max(0, Math.min(90, val));
+    const err = errorValue(guess);
+    resultDiv.textContent = `正確銳角：${correctText()}，誤差：${err.toFixed(1)}°`;
+    updateStats(err);
+    newQuestion();
+  } else if (mode===3) {
+    // 輸入角度→出題（向上=0°）
+    const angle = norm360(val);
+    resultDiv.textContent = `已生成角度：${angle}°`;
+    clear(); drawCircle(); drawRayFromCenter(angle);
+    // 不計入統計
+    input.focus();
+  } else if (mode===4) {
+    // 輸入銳角→出題（相對水平的銳角 0..90）
+    const a = Math.max(0, Math.min(90, val));
+    // 選擇一個對應方向：取「90°+a」的絕對角（向上=0基準）
+    const angleUp = 90 + a; // 與水平夾角為 a
+    resultDiv.textContent = `已生成與水平夾角：${a}°`;
+    clear(); drawHorizontalLine(); drawCircle(); drawRayFromCenter(angleUp);
+    // 不計入統計
+    input.focus();
+  }
+}
+
+// 模式切換
+function setMode(m) {
+  mode = m;
+  modeBtns.forEach(b => b.classList.toggle('active', parseInt(b.dataset.mode,10)===mode));
+  // 依模式提示輸入範圍
+  if (mode===1 || mode===3) input.placeholder = '輸入角度 (0~360，360=0)';
+  else input.placeholder = '輸入銳角 (0~90)';
+  resultDiv.textContent = '';
+  if (mode===1 || mode===2) newQuestion(); else { currentAngle=null; render(); input.focus(); }
+}
+
+// 數字鍵直輸、Enter送出
+document.addEventListener('keydown', e => {
+  if (/^[0-9]$/.test(e.key) && document.activeElement !== input) {
+    e.preventDefault();
+    input.focus();
+    input.value += e.key;
+  } else if (e.key === 'Backspace' && document.activeElement !== input) {
+    e.preventDefault();
+    input.focus();
+    input.value = input.value.slice(0,-1);
+  } else if (e.key === 'Enter') {
+    e.preventDefault();
+    submit();
+  }
+});
+submitBtn.addEventListener('click', submit);
+modeBtns.forEach(btn => btn.addEventListener('click', () => setMode(parseInt(btn.dataset.mode,10))));
+
+// 初始：模式1並立即出題（修正進入頁面沒有題目的問題）
+setMode(1);
+</script>
+</body>
+</html>
