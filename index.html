@@ -4,16 +4,33 @@
 <meta charset="UTF-8" />
 <title>角度練習與猜測</title>
 <style>
-  body { font-family: system-ui, sans-serif; margin: 0; }
+  :root {
+    --bg-color: #ffffff;
+    --text-color: #000000;
+    --canvas-border: #000000;
+    --btn-bg: #ffffff;
+    --btn-border: #888888;
+    --btn-active-bg: #eeeeee;
+  }
+  body.dark {
+    --bg-color: #0b0b0f;
+    --text-color: #e6e6e9;
+    --canvas-border: #e6e6e9;
+    --btn-bg: #121217;
+    --btn-border: #444451;
+    --btn-active-bg: #1e1e25;
+  }
+  body { font-family: system-ui, sans-serif; margin: 0; background: var(--bg-color); color: var(--text-color); }
   #container { max-width: 800px; margin: 0 auto; padding: 16px; text-align: center; }
-  canvas { border: 1px solid #000; display: block; margin: 10px auto; max-width: 100%; height: auto; }
+  canvas { border: 1px solid var(--canvas-border); display: block; margin: 10px auto; max-width: 100%; height: auto; background: transparent; }
   .row { display: flex; justify-content: center; gap: 8px; align-items: center; flex-wrap: wrap; }
-  #guess { width: 200px; height: 56px; font-size: 28px; text-align: center; }
-  #submit { height: 56px; font-size: 18px; padding: 0 16px; }
+  #guess { width: 200px; height: 56px; font-size: 28px; text-align: center; color: var(--text-color); background: transparent; border: 1px solid var(--btn-border); }
+  #submit { height: 56px; font-size: 18px; padding: 0 16px; background: var(--btn-bg); border: 1px solid var(--btn-border); color: var(--text-color); cursor: pointer; }
   #modeBtns { margin-top: 10px; }
-  #modeBtns button { font-size: 16px; padding: 8px 14px; border: 1px solid #888; background:#fff; cursor:pointer; }
-  #modeBtns button.active { background:#eee; }
+  #modeBtns button { font-size: 16px; padding: 8px 14px; border: 1px solid var(--btn-border); background:var(--btn-bg); color:var(--text-color); cursor:pointer; }
+  #modeBtns button.active { background:var(--btn-active-bg); }
   #result, #stats { margin-top: 10px; }
+  #darkToggle { margin-left: 8px; padding: 6px 10px; border: 1px solid var(--btn-border); background:var(--btn-bg); color:var(--text-color); cursor:pointer; }
 </style>
 </head>
 <body>
@@ -32,6 +49,7 @@
     <button data-mode="2">模式2：猜銳角（相對水平）</button>
     <button data-mode="3">模式3：輸入角度→出題</button>
     <button data-mode="4">模式4：輸入銳角→出題</button>
+    <button id="darkToggle">切換黑暗模式</button>
   </div>
 
   <div id="result"></div>
@@ -52,6 +70,9 @@ let currentAngle = null; // 以「向上=0°」為基準
 // 統計（僅模式1/2累計）
 let total=0, sumErr=0, minErr=null, maxErr=null, maxErrAngleText='';
 
+// 顯示用畫筆顏色，會根據主題更新
+let strokeColor = getComputedStyle(document.body).getPropertyValue('--canvas-border') || '#000';
+
 // 工具
 const DEG2RAD = Math.PI/180;
 const norm360 = a => ((a % 360) + 360) % 360;
@@ -61,10 +82,14 @@ const circDist = (a,b) => { let d = Math.abs(norm360(a)-norm360(b)); if (d>180) 
 function clear() { ctx.clearRect(0,0,cv.width,cv.height); }
 function drawCircle() {
   const cx=cv.width/2, cy=cv.height/2, r=300;
+  ctx.strokeStyle = strokeColor;
+  ctx.lineWidth = 2;
   ctx.beginPath(); ctx.arc(cx,cy,r,0,2*Math.PI); ctx.stroke();
 }
 function drawHorizontalLine() {
   const cx=cv.width/2, cy=cv.height/2, len=320;
+  ctx.strokeStyle = strokeColor;
+  ctx.lineWidth = 2;
   ctx.beginPath(); ctx.moveTo(cx-len,cy); ctx.lineTo(cx+len,cy); ctx.stroke();
 }
 // angleUp：向上為0°，順時針增加
@@ -73,6 +98,8 @@ function drawRayFromCenter(angleUp, len=300) {
   const rad = (angleUp - 90) * DEG2RAD;
   const x = cx + len * Math.cos(rad);
   const y = cy + len * Math.sin(rad);
+  ctx.strokeStyle = strokeColor;
+  ctx.lineWidth = 3;
   ctx.beginPath(); ctx.moveTo(cx,cy); ctx.lineTo(x,y); ctx.stroke();
 }
 
@@ -203,6 +230,37 @@ document.addEventListener('keydown', e => {
 });
 submitBtn.addEventListener('click', submit);
 modeBtns.forEach(btn => btn.addEventListener('click', () => setMode(parseInt(btn.dataset.mode,10))));
+
+// cookie helpers
+function setCookie(name, value, days) {
+  const d = new Date(); d.setTime(d.getTime() + (days*24*60*60*1000));
+  const expires = "expires=" + d.toUTCString();
+  document.cookie = name + "=" + encodeURIComponent(value) + ";" + expires + ";path=/";
+}
+function getCookie(name) {
+  const v = document.cookie.match('(^|;)\\s*' + name + '\\s*=\\s*([^;]+)');
+  return v ? decodeURIComponent(v.pop()) : null;
+}
+
+// 黑暗模式控制
+const darkToggle = document.getElementById('darkToggle');
+function applyStrokeFromTheme() {
+  const val = getComputedStyle(document.body).getPropertyValue('--canvas-border').trim();
+  strokeColor = val || '#000';
+}
+function setDarkMode(isDark, persist=true) {
+  if (isDark) document.body.classList.add('dark'); else document.body.classList.remove('dark');
+  applyStrokeFromTheme();
+  if (darkToggle) darkToggle.textContent = isDark ? '關閉黑暗模式' : '切換黑暗模式';
+  if (persist) setCookie('darkMode', isDark ? '1' : '0', 365);
+  render();
+}
+function toggleDarkMode() { setDarkMode(!document.body.classList.contains('dark')); }
+if (darkToggle) darkToggle.addEventListener('click', toggleDarkMode);
+
+// 讀取 cookie 並在初始前套用
+const saved = getCookie('darkMode');
+if (saved !== null) setDarkMode(saved === '1', false);
 
 // 初始：模式1並立即出題（修正進入頁面沒有題目的問題）
 setMode(1);
